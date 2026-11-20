@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Florr.io Singleplayer Clone</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #1a1a1a;
+            font-family: Arial, sans-serif;
+            color: white;
+            user-select: none;
+        }
+        canvas {
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+            font-size: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 15px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui">
+        Счет: <span id="score">0</span><br>
+        Здоровье: <span id="hp">100</span>/100
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Игрок
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            radius: 25,
+            hp: 100,
+            maxHp: 100,
+            speed: 0.08 // Коэффициент плавности следования за мышью
+        };
+
+        // Мышь
+        const mouse = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            isDown: false
+        };
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+
+        window.addEventListener('mousedown', () => { mouse.isDown = true; });
+        window.addEventListener('mouseup', () => { mouse.isDown = false; });
+
+        // Лепестки
+        const petals = [
+            { angle: 0, distance: 50, radius: 12, speed: 0.05, damage: 1 },
+            { angle: Math.PI / 2, distance: 50, radius: 12, speed: 0.05, damage: 1 },
+            { angle: Math.PI, distance: 50, radius: 12, speed: 0.05, damage: 1 },
+            { angle: Math.PI * 1.5, distance: 50, radius: 12, speed: 0.05, damage: 1 }
+        ];
+
+        // Мобы
+        let mobs = [];
+        let score = 0;
+        let spawnTimer = 0;
+
+        function spawnMob() {
+            // Спавн за пределами экрана
+            const edge = Math.floor(Math.random() * 4);
+            let x, y;
+            const offset = 50;
+
+            if (edge === 0) { x = Math.random() * canvas.width; y = -offset; }
+            else if (edge === 1) { x = Math.random() * canvas.width; y = canvas.height + offset; }
+            else if (edge === 2) { x = -offset; y = Math.random() * canvas.height; }
+            else { x = canvas.width + offset; y = Math.random() * canvas.height; }
+
+            mobs.push({
+                x: x,
+                y: y,
+                radius: 15,
+                hp: 3,
+                maxHp: 3,
+                speed: 1.5,
+                color: '#e74c3c'
+            });
+        }
+
+        function update() {
+            // Движение игрока к мыши
+            player.x += (mouse.x - player.x) * player.speed;
+            player.y += (mouse.y - player.y) * player.speed;
+
+            // Спавн мобов каждые 60 кадров (примерно 1 раз в секунду)
+            spawnTimer++;
+            if (spawnTimer > 40) {
+                spawnMob();
+                spawnTimer = 0;
+            }
+
+            // Целевая дистанция лепестков (при клике увеличивается)
+            const targetDistance = mouse.isDown ? 90 : 50;
+
+            // Обновление лепестков
+            petals.forEach(petal => {
+                petal.angle += petal.speed;
+                petal.distance += (targetDistance - petal.distance) * 0.1;
+                
+                // Мировые координаты лепестка
+                petal.worldX = player.x + Math.cos(petal.angle) * petal.distance;
+                petal.worldY = player.y + Math.sin(petal.angle) * petal.distance;
+            });
+
+            // Обновление мобов
+            for (let i = mobs.length - 1; i >= 0; i--) {
+                let mob = mobs[i];
+                
+                // Движение к игроку
+                let angleToPlayer = Math.atan2(player.y - mob.y, player.x - mob.x);
+                mob.x += Math.cos(angleToPlayer) * mob.speed;
+                mob.y += Math.sin(angleToPlayer) * mob.speed;
+
+                // Столкновение с лепестками
+                petals.forEach(petal => {
+                    let dist = Math.hypot(mob.x - petal.worldX, mob.y - petal.worldY);
+                    if (dist < mob.radius + petal.radius) {
+                        mob.hp -= petal.damage;
+                        // Отталкивание моба
+                        mob.x -= Math.cos(angleToPlayer) * 10;
+                        mob.y -= Math.sin(angleToPlayer) * 10;
+                    }
+                });
+
+                // Смерть моба
+                if (mob.hp <= 0) {
+                    mobs.splice(i, 1);
+                    score += 10;
+                    continue;
+                }
+
+                // Столкновение с игроком
+                let distToPlayer = Math.hypot(mob.x - player.x, mob.y - player.y);
+                if (distToPlayer < mob.radius + player.radius) {
+                    player.hp -= 0.5; // Урон игроку
+                    if (player.hp <= 0) {
+                        alert('Игра окончена! Ваш счет: ' + score);
+                        player.hp = player.maxHp;
+                        score = 0;
+                        mobs = [];
+                    }
+                }
+            }
+
+            // Обновление UI
+            document.getElementById('score').innerText = score;
+            document.getElementById('hp').innerText = Math.max(0, Math.ceil(player.hp));
+        }
+
+        function draw() {
+            // Очистка экрана
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Отрисовка сетки фона
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 1;
+            const gridSize = 50;
+            const startX = -player.x % gridSize;
+            const startY = -player.y % gridSize;
+            for (let x = startX; x < canvas.width; x += gridSize) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for (let y = startY; y < canvas.height; y += gridSize) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+
+            // Отрисовка игрока (центральный цветок)
+            ctx.fillStyle = '#3498db';
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = '#2980b9';
+            ctx.stroke();
+
+            // Отрисовка лепестков
+            petals.forEach(petal => {
+                ctx.fillStyle = '#2ecc71';
+                ctx.beginPath();
+                ctx.arc(petal.worldX, petal.worldY, petal.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#27ae60';
+                ctx.stroke();
+            });
+
+            // Отрисовка мобов
+            mobs.forEach(mob => {
+                ctx.fillStyle = mob.color;
+                ctx.beginPath();
+                ctx.arc(mob.x, mob.y, mob.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#c0392b';
+                ctx.stroke();
+            });
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        loop();
+    </script>
+</body>
+</html>
